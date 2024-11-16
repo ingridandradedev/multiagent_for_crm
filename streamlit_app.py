@@ -1,56 +1,66 @@
 import streamlit as st
-from openai import OpenAI
+import requests
+import json
 
-# Show title and description.
-st.title("💬 Chatbot")
+# Título e descrição
+st.title("💬 Chatbot com LangFlow API")
 st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+    "Este chatbot utiliza a API do LangFlow para gerar respostas. "
+    "Digite uma mensagem e veja como ele responde!"
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+# Configurações da API
+BASE_API_URL = "https://langflowailangflowlatest-production-74ad.up.railway.app"
+FLOW_ID = "a7fb02e1-7f56-48a3-adb7-d7cc414e3247"
+ENDPOINT = FLOW_ID  # Utilize o endpoint ou ID do fluxo
+HEADERS = {"Content-Type": "application/json"}
+TWEAKS = {}  # Ajuste os componentes aqui, se necessário.
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+# Função para chamar a API do LangFlow
+def call_langflow_api(message, endpoint=ENDPOINT, tweaks=None):
+    url = f"{BASE_API_URL}/api/v1/run/{endpoint}"
+    payload = {
+        "input_value": message,
+        "output_type": "chat",
+        "input_type": "chat",
+    }
+    if tweaks:
+        payload["tweaks"] = tweaks
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    try:
+        response = requests.post(url, json=payload, headers=HEADERS)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Erro ao conectar-se à API do LangFlow: {e}")
+        return None
 
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Manter mensagens no estado da sessão
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
+# Exibir mensagens do histórico
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+# Campo de entrada para o usuário
+if prompt := st.chat_input("Digite sua mensagem:"):
+    # Adicionar mensagem do usuário ao histórico
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
+    # Enviar mensagem para a API
+    response_data = call_langflow_api(prompt, tweaks=TWEAKS)
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+    if response_data:
+        try:
+            # Extrair a resposta da API
+            ai_message = response_data["outputs"][0]["outputs"][0]["results"]["message"]["text"]
+            # Adicionar a resposta ao histórico
+            st.session_state.messages.append({"role": "assistant", "content": ai_message})
+            with st.chat_message("assistant"):
+                st.markdown(ai_message)
+        except KeyError:
+            st.error("Erro ao processar a resposta da API.")
